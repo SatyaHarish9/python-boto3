@@ -10,6 +10,7 @@ my_inst = ec2_res.Instance('i-02d8ce2d06a40dcbf')
 print("starting the ec2 instance ")
 my_inst.start()
 #print(my_inst)
+# Resource waiter waits for 200sec(40 checks after every 5 seconds)
 my_inst.wait_until_running()
 print("The instance{} has started".format(my_inst.id))
 
