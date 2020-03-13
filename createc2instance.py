@@ -1,7 +1,7 @@
 import boto3
-image = raw_input("Enter the image id \n")
-instance_type = raw_input("Enter the instance type \n")
-key = raw_input("Enter the key \n")
+image = input("Enter the image id \n")
+instance_type = input("Enter the instance type \n")
+key = input("Enter the key \n")
 user_data = ''' #!/bin/bash
 yum update -y
 amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2
