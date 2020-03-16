@@ -6,7 +6,7 @@ from botocore.exceptions import ClientError
 s3_client = boto3.client('s3')
 
 # upload_file() method accepts the parameters file_name, S3 bucket and object_name
-s3_client.upload_file('contacts.csv', 'harideepdive', 'contacts.csv')
+s3_client.upload_file('contacts.csv', 'haridynamolambda', 'contacts.csv')
 
 
 
