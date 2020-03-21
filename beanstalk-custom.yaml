@@ -1,0 +1,165 @@
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: KeyPair to be used with your Beanstalk Environment
+  InstanceProfile:
+    Type: String
+    Description: Instance profile to attach to the Beanstalk environment instance
+    Default: aws-elasticbeanstalk-ec2-role
+Resources:
+  myApplication:
+    Type: AWS::ElasticBeanstalk::Application
+    Properties: 
+      ApplicationName: "SampleAWSElasticBeanstalkApplicationnew"
+      Description: "AWS Elastic Beanstalk PHP Sample Application"
+  myConfigTemplate: 
+    Type: AWS::ElasticBeanstalk::ConfigurationTemplate
+    Properties: 
+      ApplicationName: 
+        Ref: myApplication
+      Description: "my sample configuration template"
+      SolutionStackName: "64bit Amazon Linux 2018.03 v2.9.3 running PHP 7.3"
+      OptionSettings: 
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: EC2KeyName
+          Value: 
+            Ref: KeyName
+        - Namespace: aws:autoscaling:launchconfiguration
+          OptionName: IamInstanceProfile
+          Value: 
+            Ref: InstanceProfile
+  myAppVersion: 
+    Type: AWS::ElasticBeanstalk::ApplicationVersion
+    Properties: 
+      ApplicationName: 
+        Ref: myApplication
+      Description: "my sample version"
+      SourceBundle: 
+        S3Bucket: !Sub "elasticbeanstalk-samples-${AWS::Region}"
+        S3Key: php-newsample-app.zip
+  myEnvironment:
+    Type: AWS::ElasticBeanstalk::Environment
+    Properties: 
+      ApplicationName: 
+        Ref: myApplication
+      Description: "AWS Elastic Beanstalk Environment running PHP Sample Application"
+      TemplateName: !Ref myConfigTemplate 
+      SolutionStackName: "64bit Amazon Linux 2018.03 v2.9.3 running PHP 7.3"
+  RetrieverFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies: 
+        - 
+          PolicyName: "AllowIAMPassRole"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: "elasticbeanstalk:*"
+                Resource: "*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  RetrieverFunction:
+    DependsOn: myEnvironment
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: Lambda function to upload data to dynamodb
+      Handler: index.main
+      Role: !GetAtt RetrieverFunctionRole.Arn
+      Timeout: 600
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import cfnresponse
+
+          from botocore.exceptions import ClientError
+
+          eb = boto3.client('elasticbeanstalk')
+
+          def main(event, context):
+
+              print("Recieved Event: {}".format(json.dumps(event)))
+
+              application_name = event['ResourceProperties']['ApplicationName']
+              environment_name = event['ResourceProperties']['EnvironmentName']
+              
+              physical_resource_id = "{}|{}|CNAME".format(application_name,environment_name)
+
+              try:
+                  if event['RequestType'] == 'Create':
+
+                      print("Recieved Create Event...")
+                      print("Retrieving Environment Information for {}".format(environment_name))
+                      response = fetch_info(application_name,environment_name)
+                      
+                      cfnresponse.send(event, context,'SUCCESS', response, physical_resource_id)
+
+                  elif event['RequestType'] == 'Update':
+
+                      print("Recieved Update Event...")
+                      print("Update Events are not supported for this resource")
+                      response = fetch_info(application_name,environment_name)
+                      
+                      cfnresponse.send(event, context,'SUCCESS', response, physical_resource_id)
+                  
+                  elif event['RequestType'] == 'Delete':
+
+                      print("Recieved Delete Event...")
+                      print("Delete Events are not supported for this resource")
+                      
+                      cfnresponse.send(event, context,'SUCCESS', {} , physical_resource_id)
+              
+              except ClientError as e:
+
+                  if e.response['Error']['Code'] == 'ThrottlingException':
+                      count = 3
+                      attempts = 0
+                      while attempts < count:
+                          print("Retrying Function Execution....")
+                          time.sleep(random.expovariate(1))
+                          main(event,context)
+                          attempts += 1
+                  else:
+                      sendResponse(event,context,"","FAILED",{})
+
+          def fetch_info(app,env):
+              
+              response = eb.describe_environments(
+                  ApplicationName=app,
+                  EnvironmentNames=[env]
+                )
+
+              data = {
+                'CNAME': response['Environments'][0]['CNAME']
+              }
+              return data
+      Runtime: python3.7
+  CNAMERetriever:
+    Type: Custom::CNAMERetriever
+    Properties:
+      ServiceToken: !GetAtt RetrieverFunction.Arn
+      ApplicationName: !Ref myApplication
+      EnvironmentName: !Ref myEnvironment
+
+Outputs:
+  BeanstalkEnvironmentCNAME:
+    Value: 
+      Fn::Join:
+        - ""
+        - - "http://"
+          - !GetAtt CNAMERetriever.CNAME
+
+
+
+
+      
